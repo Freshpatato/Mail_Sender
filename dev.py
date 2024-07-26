@@ -249,7 +249,7 @@ def copy_selected_email():
             root.clipboard_clear()
             root.clipboard_append(text)
             root.update()  # now it stays on the clipboard after the window is closed
-            messagebox.showinfo("Information", "Texte copié dans le presse-papiers")
+            messagebox.showinfo("Information", "Message copié dans le presse-papiers")
 
 
 # Envoyer emails retro
