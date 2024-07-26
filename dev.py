@@ -830,6 +830,7 @@ def read_file_log():
 read_log = tk.Text(frame_action, height=50, width=70)
 read_log.pack()
 read_file_log()
+print("OK")
 
 read_config()
 
