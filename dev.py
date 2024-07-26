@@ -238,14 +238,14 @@ def copy_selected_email():
             old_dst = parts[6] if len(parts) == 7 else ""
 
             text = f"""
-Bonjour,
-
-Votre PC a été expédié. ({dst})
-Lieu : {ville}
-
-Cordialement,
-Postes de Travail France
-"""
+                    Bonjour,
+                    
+                    Votre PC a été expédié. ({dst})
+                    Lieu : {ville}
+                    
+                    Cordialement,
+                    Postes de Travail France
+                    """
             root.clipboard_clear()
             root.clipboard_append(text)
             root.update()  # now it stays on the clipboard after the window is closed
