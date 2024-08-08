@@ -179,6 +179,15 @@ def log_action(action):
         log_file_obj.write(action + "\n")
 
 
+def delete_log_file():
+    print(log_file)
+    if os.path.exists(log_file):
+        os.remove(log_file)
+        messagebox.showinfo("Log vidé")
+        read_file_log()
+    else:
+        messagebox.showerror('Log deja vidé')
+
 # Dotation
 def load_excel_file_endowment():
     print(var1_2.get())
@@ -200,29 +209,35 @@ def load_excel_file_endowment():
 
 
 def read_excel_file_endowment(file_path):
-    global filtered_df  # Assurez-vous que filtered_df est global
-    df = pd.read_excel(file_path, sheet_name='Agence')
-    df.columns = df.iloc[0]
-    df = df[1:]
-    selected_columns = df[[
-        'Demandeur', 'NOM,Prénom', 'Mail', 'Ancien DST', 'Ville', 'DST', 'Ref exp', 'Rempla/ Dotation', 'Logiciels']]
-    email_listbox_endowment.delete(0, tk.END)  # Utiliser le widget Listbox pour afficher les emails
-    if var1_1.get() == 1:
-        filtered_df = selected_columns[(
-            selected_columns['Rempla/ Dotation'].str.contains('Dotation', case=False, na=False)) & (
-            selected_columns['Logiciels'].str.contains('Mail', case=False, na=False))]
+    if file_path:
+        global filtered_df  # Assurez-vous que filtered_df est global
+        df = pd.read_excel(file_path, sheet_name='Agence')
+        df.columns = df.iloc[0]
+        df = df[1:]
+        selected_columns = df[[
+            'Demandeur', 'NOM,Prénom', 'Mail', 'Ancien DST', 'Ville', 'DST', 'Ref exp', 'Rempla/ Dotation', 'Logiciels']]
+        email_listbox_endowment.delete(0, tk.END)  # Utiliser le widget Listbox pour afficher les emails
+        if var1_1.get() == 1:
+            filtered_df = selected_columns[(
+                selected_columns['Rempla/ Dotation'].str.contains('Dotation', case=False, na=False)) & (
+                selected_columns['Logiciels'].str.contains('Mail', case=False, na=False))]
+        else:
+            filtered_df = selected_columns[(
+                selected_columns['Rempla/ Dotation'].str.contains('Rempla', case=False, na=False)) & (
+                selected_columns['Logiciels'].str.contains('Mail', case=False, na=False))]
+
+        for index, row in filtered_df.iterrows():
+            email_text = f"{row['Demandeur']} - {row['Mail']} - {row['NOM,Prénom']} - {row['Ville']} - {row['Ref exp']} - {row['DST']}"
+            if var1_2.get() == 1:
+                email_text += f" - {row['Ancien DST']}"
+
+            # Ajouter le texte dans le widget Listbox
+            email_listbox_endowment.insert(tk.END, email_text)
     else:
-        filtered_df = selected_columns[(
-            selected_columns['Rempla/ Dotation'].str.contains('Rempla', case=False, na=False)) & (
-            selected_columns['Logiciels'].str.contains('Mail', case=False, na=False))]
+        messagebox.showinfo("Info", "Pas de fichier chargé")
 
-    for index, row in filtered_df.iterrows():
-        email_text = f"{row['Demandeur']} - {row['Mail']} - {row['NOM,Prénom']} - {row['Ville']} - {row['Ref exp']} - {row['DST']}"
-        if var1_2.get() == 1:
-            email_text += f" - {row['Ancien DST']}"
-
-        # Ajouter le texte dans le widget Listbox
-        email_listbox_endowment.insert(tk.END, email_text)
+def reload_excel_file_btn():
+    read_excel_file_endowment(dota_file)
 
 def copy_selected_email():
     selected_indices = email_listbox_endowment.curselection()
@@ -639,6 +654,7 @@ def load_attachment():
         attachment_file_path = file_path
         attachment_label.config(text=os.path.basename(attachment_file_path))
         log_action(f"{formatted_datetime} Pièce jointe chargée : {file_path.split('/')[-1]}")
+        read_file_log()
         write_config()  # Enregistrer le chemin de la pièce jointe dans la configuration
 
 # Interface graphique
@@ -653,7 +669,7 @@ root.title("Mail Sender")
 root.geometry("800x900")
 root.resizable(False, False)
 
-root.iconbitmap('logo.ico')
+# oot.iconbitmap('logo.ico')
 
 notebook = ttk.Notebook(root)
 notebook.pack(fill=BOTH, expand=True, padx=10, pady=10)
@@ -764,6 +780,15 @@ path_excel_label.pack()
 ttk.Button(button_frame_endowment, text="Charger fichier Excel", command=load_excel_file_endowment,
            style='success.TButton').pack(side=LEFT, padx=10, pady=5)
 
+# Creating a photoimage object to use image
+img_reload = tk.PhotoImage(file=r"../src/img/reload.png")
+
+# Resizing image to fit on button
+photoimage = img_reload.subsample(20, 20)
+
+
+ttk.Button(button_frame_endowment, image=photoimage, command=reload_excel_file_btn, style="success.Outline.TButton").pack()
+
 ttk.Label(frame_endowment, text="Sélectionnez un preset de mail:").pack(pady=15, anchor=W)
 preset_combobox_endowment = ttk.Combobox(frame_endowment, values=list(presets.keys()), state="readonly")
 preset_combobox_endowment.pack(pady=5)
@@ -809,6 +834,12 @@ attachment_label.pack(pady=5)
 # Onglet action récentes
 frame_action = ttk.Frame(notebook, padding=20)
 notebook.add(frame_action, text="Actions Recentes")
+
+button_frame_log = ttk.Frame(frame_action)
+button_frame_log.pack(pady=10)
+
+
+ttk.Button(button_frame_log, text="Vider logs", command=delete_log_file, style="sucess.TButton").pack()
 
 #Onglet msg to html
 frame_msg2html = ttk.Frame(notebook, padding=20)
