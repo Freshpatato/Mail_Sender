@@ -838,7 +838,7 @@ notebook.add(frame_action, text="Actions Recentes")
 button_frame_log = ttk.Frame(frame_action)
 button_frame_log.pack(pady=10)
 
-
+#btn delete log
 ttk.Button(button_frame_log, text="Vider logs", command=delete_log_file, style="sucess.TButton").pack()
 
 #Onglet msg to html
