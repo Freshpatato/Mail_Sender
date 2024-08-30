@@ -183,10 +183,10 @@ def delete_log_file():
     print(log_file)
     if os.path.exists(log_file):
         os.remove(log_file)
-        messagebox.showinfo("Log vidé")
+        messagebox.showinfo("Info", "Log vidé")
         read_file_log()
     else:
-        messagebox.showerror('Log deja vidé')
+        messagebox.showerror("Info", "Log déjà vidé")
 
 # Dotation
 def load_excel_file_endowment():
@@ -209,7 +209,6 @@ def load_excel_file_endowment():
 
 
 def read_excel_file_endowment(file_path):
-    if file_path:
         global filtered_df  # Assurez-vous que filtered_df est global
         df = pd.read_excel(file_path, sheet_name='Agence')
         df.columns = df.iloc[0]
@@ -233,8 +232,6 @@ def read_excel_file_endowment(file_path):
 
             # Ajouter le texte dans le widget Listbox
             email_listbox_endowment.insert(tk.END, email_text)
-    else:
-        messagebox.showinfo("Info", "Pas de fichier chargé")
 
 def reload_excel_file_btn():
     read_excel_file_endowment(dota_file)
@@ -253,14 +250,14 @@ def copy_selected_email():
             old_dst = parts[6] if len(parts) == 7 else ""
 
             text = f"""
-                    Bonjour,
+                Bonjour,
                     
-                    Votre PC a été expédié. ({dst})
-                    Lieu : {ville}
+                Votre PC a été expédié. ({dst})
+                Lieu : {ville}
                     
-                    Cordialement,
-                    Postes de Travail France
-                    """
+                Cordialement,
+                Postes de Travail France
+                """
             root.clipboard_clear()
             root.clipboard_append(text)
             root.update()  # now it stays on the clipboard after the window is closed
@@ -323,7 +320,12 @@ def send_emails():
             log_action(f"{formatted_datetime} Email envoyé à {mail_to} {materiel}")
             read_file_log()
 
-            df.loc[(df['Matériel concerné'] == materiel) & (df['Mail'] == mail_to), 'Etape'] = f"Etape {int(etape.split()[1]) + 1}"
+            # Here we check if the current step is "Etape 4"
+            if etape.strip() == "Etape 4":
+                df.loc[(df['Matériel concerné'] == materiel) & (df['Mail'] == mail_to), 'Etape'] = "Terminé"
+            else:
+                next_etape_number = int(etape.split()[1]) + 1
+                df.loc[(df['Matériel concerné'] == materiel) & (df['Mail'] == mail_to), 'Etape'] = f"Etape {next_etape_number}"
 
         except smtplib.SMTPRecipientsRefused as e:
             print(f"Erreur d'envoi à {mail_to}: {e}")
@@ -332,6 +334,7 @@ def send_emails():
     df.to_excel(loaded_file_path, index=False)
     messagebox.showinfo("Succès", "Emails envoyés avec succès et étapes mises à jour")
     update_email_listbox()
+
 
 
 # Envoyer les emails dotation
@@ -706,9 +709,15 @@ ttk.Button(button_frame, text="Charger fichier Excel", command=load_excel_file, 
 path_excel_label_retro = ttk.Label(frame_email, text="Aucun fichier chargé")
 path_excel_label_retro.pack()
 
+filtered_presets = [key for key in presets.keys() if key in ["mail 1", "mail 2", "mail 3", "mail 4"]]
+print(filtered_presets)
+
+# Create the label and combobox
 ttk.Label(frame_email, text="Sélectionnez un preset de mail:").pack(pady=5, anchor=W)
-preset_combobox = ttk.Combobox(frame_email, values=list(presets.keys()), state="readonly")
+preset_combobox = ttk.Combobox(frame_email, values=filtered_presets, state="readonly")
 preset_combobox.pack(pady=5)
+
+# Bind the combobox selection to the update function
 preset_combobox.bind("<<ComboboxSelected>>", update_body_text)
 
 var1 = tk.IntVar()
@@ -781,7 +790,7 @@ ttk.Button(button_frame_endowment, text="Charger fichier Excel", command=load_ex
            style='success.TButton').pack(side=LEFT, padx=10, pady=5)
 
 # Creating a photoimage object to use image
-img_reload = tk.PhotoImage(file=r"../src/img/reload.png")
+img_reload = tk.PhotoImage(file=r"C:\Users\maxime.bourquard\OneDrive - SPIE\Documents\GitHub\Mail_Sender\src\img\reload.png")
 
 # Resizing image to fit on button
 photoimage = img_reload.subsample(20, 20)
