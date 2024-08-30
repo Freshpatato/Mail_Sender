@@ -4,7 +4,7 @@
 #define MyAppName "Mail Sender"
 #define MyAppVersion "1.0"
 #define MyAppPublisher "SPIE, Inc."
-#define MyAppExeName "relance.exe"
+#define MyAppExeName "Mail_Sender.exe"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
@@ -26,9 +26,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
-OutputDir=C:\Users\maxime.bourquard\OneDrive - SPIE\Documents\retro\Inno
-OutputBaseFilename=Mail_Sender_1.0
-SetupIconFile=C:\Users\maxime.bourquard\OneDrive - SPIE\Documents\retro\logo.ico
+OutputDir=C:\Users\maxime.bourquard\OneDrive - SPIE\Documents\GitHub\Mail_Sender\Inno
+OutputBaseFilename=Mail_Sender_1.1
+SetupIconFile=C:\Users\maxime.bourquard\OneDrive - SPIE\Documents\GitHub\Mail_Sender\Mail_Sender\logo.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -40,9 +40,9 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "C:\Users\maxime.bourquard\OneDrive - SPIE\Documents\retro\output\relance\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "C:\Users\maxime.bourquard\OneDrive - SPIE\Documents\retro\output\relance\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "C:\Users\maxime.bourquard\OneDrive - SPIE\Documents\retro\output\relance\logo.ico"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\Users\maxime.bourquard\output\dev\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\maxime.bourquard\output\dev\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\Users\maxime.bourquard\output\dev\Mail_Sender\*"; DestDir: "{app}\Mail_Sender"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
