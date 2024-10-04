@@ -15,28 +15,28 @@ import webbrowser
 from datetime import datetime
 import shutil
 
+
+# --- Variables Globales ---
+presets = {}
 dota_file = None
 filtered_df = None
 global df
 
-# Liste des presets de mail
-presets = {}
-
-# Jour et heure
 current_datetime = datetime.now()
 formatted_datetime = current_datetime.strftime("%d/%m/%Y %H:%M:%S")
 
-# Fichier de configuration
-config_directory = os.path.join(os.path.expanduser("~"), ".retro_app")
-os.makedirs(config_directory, exist_ok=True)
-config_file = os.path.join(config_directory, 'config.ini')
-log_file = os.path.join(config_directory, 'log.txt')
 loaded_file_path = None  # Variable pour stocker le chemin du fichier chargé
 attachment_file_path = None  # Variable pour stocker le chemin de la pièce jointe
 hp_file_path = None #Variable chemin fichier HP
 
 
-# Lire la configuration
+# --- Gestion configuaration ---
+config_directory = os.path.join(os.path.expanduser("~"), ".retro_app")
+os.makedirs(config_directory, exist_ok=True)
+config_file = os.path.join(config_directory, 'config.ini')
+log_file = os.path.join(config_directory, 'log.txt')
+
+
 def read_config():
     config = configparser.ConfigParser()
     config.read(config_file)
@@ -69,8 +69,6 @@ def read_config():
     preset_combobox['values'] = list(presets.keys())
 
 
-
-# Écrire la configuration
 def write_config():
     config = configparser.ConfigParser()
     if not os.path.exists(config_file):
@@ -117,7 +115,6 @@ def write_config():
 
 
 
-
 def log_action(action):
     with open(log_file, "a", encoding="utf-8") as log_file_obj:
         log_file_obj.write(action + "\n")
@@ -146,8 +143,7 @@ def read_version():
         return f"Erreur: {e}" 
     
 
-
-# Config smtp
+# --- Configuration SMTP ---
 def config_smtp():
     smtp_server = 'smtp.office365.com'
     smtp_port = 587
@@ -163,14 +159,14 @@ def config_smtp():
     return server, from_address
 
 
-# Excel Dotation et Rempla
+# --- Getion excel Dotation/Remplacement ---
 def import_excel_file_endowment():
     global file_path_endowment
     file_path_endowment = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx")])
     load_excel_file_endowment(file_path_endowment)
 
 
-# Charger fichier excel dotation/rempla
+
 def load_excel_file_endowment(file_path):   
     if not file_path:
         return
@@ -215,15 +211,8 @@ def read_excel_file_endowment(file_path):
         ))
 
 
-# Btn maj dotation/rempla
-def reload_excel_file_btn():
-    load_excel_file_endowment(hp_file_path)
 
-def reload_excel_file_relance_btn():
-    load_excel_file(hp_file_path)
-
-
-# Message de cloture dotation/rempla
+# --- Message cloture Doation/Remplacement
 def copy_selected_email():
     selected_items = treeview.selection()  # Récupérer les éléments sélectionnés dans le Treeview
     if not selected_items:
@@ -284,8 +273,110 @@ def copy_selected_email():
     messagebox.showinfo("Information", "Message copié dans le presse-papiers")
 
 
+def reload_excel_file_btn():
+    load_excel_file_endowment(hp_file_path)
 
-# Envoyer emails relance
+
+# --- Getion excel Relance ---
+def check_columns(df):
+    # Nettoyer les noms de colonnes pour enlever les espaces inutiles
+    df.columns = df.columns.str.strip()
+
+    # Les noms de colonnes attendus
+    required_columns = ['Mail', 'Matériel concerné', 'Etat rétro', 'Etape Relance', 'Mail', 'Mail', 'Mail Responsable']  # Vérifiez l'exactitude des noms
+
+    # Vérifier si toutes les colonnes requises sont présentes
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    
+    if missing_columns:
+        messagebox.showerror("Erreur", f"Colonnes manquantes : {', '.join(missing_columns)}")
+        return False
+    return True
+
+def load_excel_file(file_path):
+    if not file_path:
+        messagebox.showerror("Erreur", "Aucun fichier sélectionné.")
+        return
+    file_path_retro = file_path 
+    file_path_retro_cp = os.path.join(config_directory, 'tmp_dotation.xlsx')
+    shutil.copy2(file_path_retro, file_path_retro_cp)
+    path_excel_label_retro.config(text=file_path_retro.split("/")[-1])
+    try: 
+        
+        df = pd.read_excel(file_path_retro_cp, sheet_name='Rétro')
+        
+        if df.empty:
+            raise ValueError("Le fichier Excel est vide.")
+        
+        check_columns(df)
+        update_email_listbox('excel')
+        
+    except Exception as e:
+        messagebox.showerror("Erreur", f"Erreur lors du chargement du fichier Excel : {e}")
+
+
+
+# Fonction Maj Treeview Relance
+def update_email_listbox(event):
+    global df
+    if 'df' not in globals() or df.empty:
+        messagebox.showerror("Erreur", "Veuillez d'abord charger un fichier Excel valide.")
+        return
+
+    selected_preset = preset_combobox.get() 
+    if selected_preset:
+        try:
+            if len(selected_preset.split()) < 2:
+                messagebox.showerror("Erreur", "Le format du preset sélectionné est incorrect.")
+                return
+
+            # Récupère l'étape 
+            etape = selected_preset.split()[1]  
+            
+            
+            df['Etape Relance'] = df['Etape Relance'].str.strip()
+
+            # Vérifie si les colonnes nécessaires sont présentes dans le fichier Excel
+            if all(col in df.columns for col in ['Matériel concerné', 'Mail', 'Etat rétro', 'Etape Relance']):
+                
+                # Filtre les données en fonction de l'étape et des emails non terminés
+                filter_conditions = (
+                    (df['Etat rétro'] != 'Terminé') & 
+                    (df['Etape Relance'] == f"Etape {etape}")
+                )
+                
+                filtered_columns = df.loc[filter_conditions, ['Matériel concerné', 'Mail', 'Etat rétro', 'Etape Relance', 'Mail Responsable']]
+                
+                # Supprime les lignes avec des valeurs manquantes
+                filtered_columns.dropna(subset=['Matériel concerné', 'Mail', 'Etape Relance'], inplace=True)
+                
+                # Efface les anciennes données du Treeview
+                treeview_relance.delete(*treeview_relance.get_children())
+                
+                # Ajoute les nouvelles données filtrées dans le Treeview
+                for _, row in filtered_columns.iterrows():
+                    treeview_relance.insert("", "end", values=(
+                        row['Matériel concerné'],
+                        row['Mail'],
+                        row['Mail Responsable'],
+                        row['Etape Relance']
+                    ))
+            else:
+                messagebox.showerror("Erreur", "Les colonnes nécessaires ne sont pas présentes dans le fichier Excel.")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors de la mise à jour de la liste des emails : {e}")
+    else:
+        messagebox.showerror("Erreur", "Veuillez sélectionner un preset valide.")
+
+def reload_excel_file_relance_btn():
+    load_excel_file(hp_file_path)
+
+
+
+
+
+
+# --- Envoie des emails relance ---
 def send_emails():
     global df
 
@@ -396,7 +487,8 @@ def send_emails():
 
     
 
-# Envoyer les emails dotation/rempla
+
+# --- Envoie des emails Doation/Remplacement ---
 def send_emails_endowment():
     global old_dst
     # Récupérer les indices sélectionnés dans le Treeview
@@ -496,106 +588,8 @@ def send_emails_endowment():
 
 
 
-def check_columns(df):
-    # Nettoyer les noms de colonnes pour enlever les espaces inutiles
-    df.columns = df.columns.str.strip()
 
-    # Les noms de colonnes attendus
-    required_columns = ['Mail', 'Matériel concerné', 'Etat rétro', 'Etape Relance', 'Mail', 'Mail', 'Mail Responsable']  # Vérifiez l'exactitude des noms
-
-    # Vérifier si toutes les colonnes requises sont présentes
-    missing_columns = [col for col in required_columns if col not in df.columns]
-    
-    if missing_columns:
-        messagebox.showerror("Erreur", f"Colonnes manquantes : {', '.join(missing_columns)}")
-        return False
-    return True
-
-
-
-# Fichier Excel relance
-def load_excel_file(file_path):
-    if not file_path:
-        messagebox.showerror("Erreur", "Aucun fichier sélectionné.")
-        return
-    file_path_retro = file_path 
-    file_path_retro_cp = os.path.join(config_directory, 'tmp_dotation.xlsx')
-    shutil.copy2(file_path_retro, file_path_retro_cp)
-    path_excel_label_retro.config(text=file_path_retro.split("/")[-1])
-
-    global df  # La DataFrame principale pour Relance
-    try: 
-        #feuille "Rétro"
-        df = pd.read_excel(file_path_retro_cp, sheet_name='Rétro')
-        
-        if df.empty:
-            raise ValueError("Le fichier Excel est vide.")
-        
-        check_columns(df)
-        update_email_listbox('excel')
-        
-    except Exception as e:
-        messagebox.showerror("Erreur", f"Erreur lors du chargement du fichier Excel : {e}")
-
-
-
-# Fonction Maj Treeview Relance
-def update_email_listbox(event):
-    global df
-    if 'df' not in globals() or df.empty:
-        messagebox.showerror("Erreur", "Veuillez d'abord charger un fichier Excel valide.")
-        return
-
-    selected_preset = preset_combobox.get()  # Récupère le preset sélectionné
-    if selected_preset:
-        try:
-            # Vérification que selected_preset est dans le bon format
-            if len(selected_preset.split()) < 2:
-                messagebox.showerror("Erreur", "Le format du preset sélectionné est incorrect.")
-                return
-
-            # Récupère l'étape (présumée être dans le format 'Etape X')
-            etape = selected_preset.split()[1]  # Exemple : "Etape 2"
-            
-            # Nettoie les valeurs dans la colonne 'Etape Relance'
-            df['Etape Relance'] = df['Etape Relance'].str.strip()
-
-            # Vérifie si les colonnes nécessaires sont présentes dans le fichier Excel
-            if all(col in df.columns for col in ['Matériel concerné', 'Mail', 'Etat rétro', 'Etape Relance']):
-                
-                # Filtre les données en fonction de l'étape et des emails non terminés
-                filter_conditions = (
-                    (df['Etat rétro'] != 'Terminé') & 
-                    (df['Etape Relance'] == f"Etape {etape}")
-                )
-                
-                filtered_columns = df.loc[filter_conditions, ['Matériel concerné', 'Mail', 'Etat rétro', 'Etape Relance', 'Mail Responsable']]
-                
-                # Supprime les lignes avec des valeurs manquantes
-                filtered_columns.dropna(subset=['Matériel concerné', 'Mail', 'Etape Relance'], inplace=True)
-                
-                # Efface les anciennes données du Treeview
-                treeview_relance.delete(*treeview_relance.get_children())
-                
-                # Ajoute les nouvelles données filtrées dans le Treeview
-                for _, row in filtered_columns.iterrows():
-                    treeview_relance.insert("", "end", values=(
-                        row['Matériel concerné'],
-                        row['Mail'],
-                        row['Mail Responsable'],
-                        row['Etape Relance']
-                    ))
-            else:
-                messagebox.showerror("Erreur", "Les colonnes nécessaires ne sont pas présentes dans le fichier Excel.")
-        except Exception as e:
-            messagebox.showerror("Erreur", f"Erreur lors de la mise à jour de la liste des emails : {e}")
-    else:
-        messagebox.showerror("Erreur", "Veuillez sélectionner un preset valide.")
-
-            
-
-
-# Afficher un aperçu du contenu HTML
+# --- Gestion des presets ---
 def show_html_preview():
     selected_preset = preset_listbox.get(tk.ACTIVE)
     if selected_preset:
@@ -607,7 +601,7 @@ def show_html_preview():
     else:
         messagebox.showerror("Erreur", "Aucun preset sélectionné pour l'aperçu.")
 
-# Fonction pour échapper les accolades dans le contenu HTML
+# Fonction pour  les accolades HTML
 def escape_curly_braces(content):
     content = content.replace("{", "{{").replace("}", "}}")
     content = content.replace("{{materiel}}", "{materiel}").replace("{{etape}}", "{etape}").replace("{{dst}}","{dst}").replace(
@@ -616,7 +610,7 @@ def escape_curly_braces(content):
     return content
 
 
-# Fonction pour ajouter ou éditer un preset avec une fenêtre de texte
+
 def edit_preset_window(preset_name=None, is_html=False):
     def save_preset():
         subject = subject_entry_popup.get().strip()
@@ -677,11 +671,11 @@ def edit_preset_window(preset_name=None, is_html=False):
 
     ttk.Button(window, text="Sauvegarder", command=save_preset).pack(pady=10)
 
-# Ajouter nouveau preset
+
 def add_preset(is_html=False):
     edit_preset_window(is_html=is_html)
 
-# Supprimer preset
+
 def delete_preset():
     selected_preset = preset_listbox.get(tk.ACTIVE)
     preset_name = " ".join(selected_preset.split(" ")[:-1])
@@ -691,14 +685,14 @@ def delete_preset():
         preset_listbox.delete(tk.ACTIVE)
         write_config()
 
-# Modifier preset
+
 def edit_preset():
     selected_preset = preset_listbox.get(tk.ACTIVE)
     preset_name = " ".join(selected_preset.split(" ")[:-1])
     if preset_name in presets:
         edit_preset_window(preset_name, is_html=presets[preset_name][0] == "HTML")
 
-# Piece Jointe PDF
+
 def load_attachment():
     global attachment_file_path
     file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
@@ -710,7 +704,7 @@ def load_attachment():
         write_config() 
 
 
-# Charger fichier HP
+
 def load_dotation_hp():
     global hp_file_path
     file_path = filedialog.askopenfilename()
@@ -722,7 +716,9 @@ def load_dotation_hp():
         write_config() 
 
 
-#Interface graphique
+
+
+# --- Gestion interface graphique ---
 root = tk.Tk()
 
 var_dpd = tk.IntVar()
