@@ -14,79 +14,10 @@ import configparser
 import webbrowser
 from datetime import datetime
 import shutil
-import extract_msg
-import re
 
 dota_file = None
 filtered_df = None
-
-
-def sanitize_path(path):
-    # Remove extra spaces and normalize the path
-    return os.path.normpath(path.strip())
-
-
-def convert_msg_to_html(msgFolder, msgOutputFolder, msgFile):
-    try:
-        # Charger le fichier .msg
-        msg = extract_msg.Message(os.path.join(msgFolder, msgFile))
-        msgName = os.path.splitext(msgFile)[0]
-
-        output_html_file = f"{msgName}.html"
-
-        # Récupérer le corps du message au format HTML
-        htmlBody = msg.htmlBody
-        if not htmlBody:
-            raise ValueError("Le fichier .msg ne contient pas de corps HTML.")
-
-        # Décoder le contenu HTML si nécessaire
-        if isinstance(htmlBody, bytes):
-            htmlBody = htmlBody.decode('utf-8', errors='ignore')
-
-        # Créer le dossier de sortie s'il n'existe pas
-        outputFolder = sanitize_path(os.path.join(msgOutputFolder, msgName))
-        if not os.path.exists(outputFolder):
-            os.makedirs(outputFolder)
-
-        # Remplacer les CIDs par les noms de fichiers des pièces jointes
-        searchPattern = re.compile(r'src="cid:([^"]+)"')
-        attachments_dict = {re.sub(r'[@<>]', '', attachment.cid): attachment for attachment in msg.attachments if
-                            attachment.cid}
-
-        # Trier les CIDs trouvés dans le HTML
-        cids_in_html = searchPattern.findall(htmlBody)
-        for cid in cids_in_html:
-            cleaned_cid = re.sub(r'[@<>]', '', cid)
-            if cleaned_cid in attachments_dict:
-                attachment = attachments_dict[cleaned_cid]
-                imageName = attachment.longFilename or attachment.shortFilename
-                attachment_path = sanitize_path(os.path.join(outputFolder, imageName))
-                with open(attachment_path, 'wb') as f:
-                    f.write(attachment.data)
-
-                # Remplacer les CIDs dans le HTML
-                htmlBody = htmlBody.replace(f'src="cid:{cid}"', f'src="{imageName}"')
-
-        # Sauvegarder le HTML dans un fichier
-        output_html_path = sanitize_path(os.path.join(outputFolder, output_html_file))
-        with open(output_html_path, 'w', encoding='utf-8') as htmlFile:
-            htmlFile.write(htmlBody)
-
-        print(f"{output_html_file} : done")
-
-    except Exception as e:
-        print(f"Error: {str(e)}")
-
-
-def select_msg_file():
-    msgFilePath = filedialog.askopenfilename(title="Sélectionnez un fichier .msg", filetypes=[("MSG Files", "*.msg")])
-    if msgFilePath:
-        msgFolder = os.path.dirname(msgFilePath)
-        msgOutputFolder = os.path.join(msgFolder, "output")
-        if not os.path.exists(msgOutputFolder):
-            os.makedirs(msgOutputFolder)
-        convert_msg_to_html(msgFolder, msgOutputFolder, os.path.basename(msgFilePath))
-
+global df
 
 # Liste des presets de mail
 presets = {}
@@ -102,6 +33,8 @@ config_file = os.path.join(config_directory, 'config.ini')
 log_file = os.path.join(config_directory, 'log.txt')
 loaded_file_path = None  # Variable pour stocker le chemin du fichier chargé
 attachment_file_path = None  # Variable pour stocker le chemin de la pièce jointe
+hp_file_path = None #Variable chemin fichier HP
+
 
 # Lire la configuration
 def read_config():
@@ -126,11 +59,16 @@ def read_config():
         global attachment_file_path
         attachment_file_path = config['Attachment'].get('pdf', '')
         attachment_label.config(text=os.path.basename(attachment_file_path))
+    
+    if 'File_HP' in config:
+        global hp_file_path
+        hp_file_path = config['File_HP'].get('xlsx', '')
+        hp_file_label.config(text=os.path.basename(hp_file_path))
+                                              
 
     preset_combobox['values'] = list(presets.keys())
-    preset_combobox_endowment['values'] = list(presets.keys())
-    if 'dotation' not in presets:
-        messagebox.showerror("Erreur", "Le preset 'Dotation' n'existe pas. Veuillez le créer avant de continuer.")
+
+
 
 # Écrire la configuration
 def write_config():
@@ -167,8 +105,17 @@ def write_config():
     else:
         config['Attachment']['pdf'] = str(attachment_file_path)
 
+    if 'File_HP' not in config:
+        config['File_HP'] = {
+            'xlsx': str(hp_file_path)
+        }
+    else:
+        config['File_HP']['xlsx'] = str(hp_file_path)
+
     with open(config_file, 'w') as configfile:
         config.write(configfile)
+
+
 
 
 def log_action(action):
@@ -187,251 +134,321 @@ def delete_log_file():
 def read_version():
     # Chemin du répertoire de configuration où se trouve config.ini et version.txt
     config_directory = os.path.join(os.path.expanduser("~"), ".retro_app")
-    version_file_path = os.path.join(config_directory, "version.txt")  # Spécifiez le chemin correct
+    version_file_path = os.path.join(config_directory, "version.txt")  
 
     try:
         with open(version_file_path, 'r') as file:
             version = file.read().strip()
             return version
     except FileNotFoundError:
-        return "Version inconnue"  # En cas de problème de lecture du fichier
+        return "Version inconnue"  
     except OSError as e:
-        return f"Erreur: {e}"  # Gestion des autres erreurs possibles
+        return f"Erreur: {e}" 
+    
 
-# Dotation
 
+# Config smtp
+def config_smtp():
+    smtp_server = 'smtp.office365.com'
+    smtp_port = 587
+    username = username_entry.get()
+    password = password_entry.get()
+    from_address = from_address_entry.get()
+    
+    # Configuration du serveur SMTP
+    server = smtplib.SMTP(smtp_server, smtp_port)
+    server.starttls()
+    server.login(username, password)
+    
+    return server, from_address
+
+
+# Excel Dotation et Rempla
 def import_excel_file_endowment():
     global file_path_endowment
-    if var1_1.get() == 0 and var1_2.get() == 0:
-        messagebox.showerror("Erreur", "Aucun type sélectionné")
-        return
     file_path_endowment = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx")])
     load_excel_file_endowment(file_path_endowment)
 
 
+# Charger fichier excel dotation/rempla
 def load_excel_file_endowment(file_path):   
     if not file_path:
         return
     global dota_file
-    file_path_endowment = file_path  # Enregistrer le chemin du fichier chargé
+    file_path_endowment = file_path  
     dota_file = os.path.join(config_directory, 'tmp_dotation.xlsx')
     shutil.copy2(file_path_endowment, dota_file)
     path_excel_label.config(text=file_path_endowment.split("/")[-1])
     read_excel_file_endowment(dota_file)
 
 
+# Lire fichier excel dotation/rempla
 def read_excel_file_endowment(file_path):
-        global filtered_df  
-        df = pd.read_excel(file_path, sheet_name='Agence')
-        df.columns = df.iloc[0]
-        df = df[1:]
-        selected_columns = df[[
-            'Demandeur', 'NOM,Prénom', 'Mail', 'Ancien DST', 'Ville', 'DST', 'Ref exp', 'Rempla/ Dotation', 'Logiciels']]
-        email_listbox_endowment.delete(0, tk.END) 
-        if var1_1.get() == 1:
-            filtered_df = selected_columns[(
-                selected_columns['Rempla/ Dotation'].str.contains('Dotation', case=False, na=False)) & (
-                selected_columns['Logiciels'].str.contains('Mail', case=False, na=False))]
-        else:
-            filtered_df = selected_columns[(
-                selected_columns['Rempla/ Dotation'].str.contains('Rempla', case=False, na=False)) & (
-                selected_columns['Logiciels'].str.contains('Mail', case=False, na=False))]
+    global filtered_df  
+    if not file_path:
+        return
+    df = pd.read_excel(file_path, sheet_name='Agence')
+    df.columns = df.iloc[0]
+    df = df[1:]
+    selected_columns = df[[ 
+        'Demandeur', 'NOM,Prénom', 'Mail', 'Ancien DST', 'Ville', 'DST', 'Ref exp', 'Service expe étranger', 'Rempla/ Dotation', 'Logiciels']]
+    
+    # Effacer les anciennes données du Treeview
+    for row in treeview.get_children():
+        treeview.delete(row)
+    
+  
+    filtered_df = selected_columns[(
+        selected_columns['Rempla/ Dotation'].str.contains('Rempla EZV|Dotation EZV', case=False, na=False)) & (
+        selected_columns['Logiciels'].str.contains('Mail', case=False, na=False)) ]
+   
+    # Insérer les données dans le Treeview
+    for index, row in filtered_df.iterrows():
+        treeview.insert("", "end", values=(
+            row['Demandeur'], 
+            row['Mail'], 
+            row['NOM,Prénom'], 
+            row['Ville'], 
+            row['Ref exp'], 
+            row['DST'], 
+            row['Ancien DST']
+        ))
 
-        for index, row in filtered_df.iterrows():
-            email_text = f"{row['Demandeur']} - {row['Mail']} - {row['NOM,Prénom']} - {row['Ville']} - {row['Ref exp']} - {row['DST']}"
-            if var1_2.get() == 1:
-                email_text += f" - {row['Ancien DST']}"
 
-            # Ajouter le texte dans le widget Listbox
-            email_listbox_endowment.insert(tk.END, email_text)
-
+# Btn maj dotation/rempla
 def reload_excel_file_btn():
-    load_excel_file_endowment(file_path_endowment)
+    load_excel_file_endowment(hp_file_path)
 
+def reload_excel_file_relance_btn():
+    load_excel_file(hp_file_path)
+
+
+# Message de cloture dotation/rempla
 def copy_selected_email():
-    selected_indices = email_listbox_endowment.curselection()
-    if not selected_indices:
+    selected_items = treeview.selection()  # Récupérer les éléments sélectionnés dans le Treeview
+    if not selected_items:
         messagebox.showerror("Erreur", "Aucun email sélectionné")
         return
 
-    for i in selected_indices:
-        email_text = email_listbox_endowment.get(i)
-        parts = email_text.split(" - ")
-        if len(parts) >= 6:
-            demandeur, mail_to, beneficiare, ville, expe, dst = parts[:6]
-            old_dst = parts[6] if len(parts) == 7 else ""
-            if var1_1.get() == 1:
+    for item in selected_items:
+        values = treeview.item(item, 'values')  # Récupérer les valeurs des colonnes pour la ligne sélectionnée
+        if len(values) >= 6:
+            demandeur, mail_to, beneficiare, ville, expe, dst = values[:6]
+            old_dst = values[6] if len(values) == 7 else ""
+            print(old_dst)
+            if old_dst.strip().lower() == 'dotation':
+                # Si old_dst n'existe pas, message dotation
                 text = f"""
-                    Bonjour,
-                        
-                    Votre PC a été expédié. ({dst})
-                    Lieu : {ville}
-                        
-                    Cordialement,
-                    Postes de Travail France
-                    """
+                Bonjour,
+
+                Votre PC a été expédié. ({dst})
+                Lieu : {ville}
+
+                Cordialement,
+                Postes de Travail France
+                """
             else:
-                text = f"""
+                if var_dpd.get() == 0:  # Prepa Venissieux
+                    text = f"""
                     Bonjour,
-
+                    
                     Le nouveau PC {dst} a été expédié ce jour à votre attention.
-
-                    Concernant la restitution de votre ancien PC {old_dst}, il vous suffit prendre rendez-vous via notre outil RESERVIO.
+                    
+                    Concernant la restitution de votre ancien PC {old_dst}, il vous suffit de prendre rendez-vous via notre outil RESERVIO.
                     Pour accéder à l’outil de réservation, merci de prendre connaissance du mail « AVIS EXPEDITION »
-
+                    
                     Cordialement,
                     Postes de Travail France
                     """
-                
+                else:  # Préparation à distance
+                    text = f"""
+                    Bonjour,
+                    
+                    Le nouveau PC {dst} a été expédié ce jour à votre attention.
+                    
+                    Concernant la restitution de votre ancien PC {old_dst}, il vous suffit de prendre rendez-vous via notre outil RESERVIO.
+                    Pour accéder à l’outil de réservation, merci de prendre connaissance du mail « AVIS EXPEDITION ».
+
+                    Concernant l'installation de vos logiciels, merci de nous contacter au : 02 99 04 92 28.
+                    Merci de revenir vers nous dans les 7 jours suivant la réception du PC, si ce délai est dépassé merci de faire un ticket EasyVista.
+                    
+                    Cordialement,
+                    Postes de Travail France
+                    """
+            
+            # Copier le texte dans le presse-papiers
             root.clipboard_clear()
             root.clipboard_append(text)
-            root.update()  # now it stays on the clipboard after the window is closed
+            root.update()
+
     messagebox.showinfo("Information", "Message copié dans le presse-papiers")
 
 
-# Envoyer emails retro
+
+# Envoyer emails relance
 def send_emails():
-    selected_indices = email_listbox.curselection()
-    if not selected_indices:
+    global df
+
+    # Vérifie que le fichier Excel a bien été chargé
+    if 'df' not in globals() or df.empty:
+        messagebox.showerror("Erreur", "Veuillez d'abord charger un fichier Excel valide.")
+        return
+
+    # Récupérer les indices sélectionnés dans le Treeview
+    selected_items = treeview_relance.selection()
+    if not selected_items:
         messagebox.showerror("Erreur", "Aucun email sélectionné")
         return
 
-    selected_emails = [email_listbox.get(i) for i in selected_indices]
+    # Récupérer les emails sélectionnés depuis le Treeview
+    selected_emails = [treeview_relance.item(item, 'values') for item in selected_items]
 
-    smtp_server = 'smtp.office365.com'
-    smtp_port = 587
-    username = username_entry.get()
-    password = password_entry.get()
-    from_address = from_address_entry.get()
+    # Configurer le serveur SMTP
+    server, from_address = config_smtp()
 
-    write_config()
-
-    server = smtplib.SMTP(smtp_server, smtp_port)
-    server.starttls()
-    server.login(username, password)
-
-    subject = subject_entry.get()
-    body_template = body_text.get("1.0", tk.END)
-
-    for i, entry in enumerate(selected_emails):
-        materiel, mail_to, mail_responsable, etape = entry.split(" - ")
-
-        try:
-            body = body_template.format(materiel=materiel, etape=etape, mail_responsable=mail_responsable)
-        except KeyError as e:
-            messagebox.showerror("Erreur", f"Variable non définie dans le modèle d'email : {e}")
-            server.quit()
-            return
-
-        mimemsg = MIMEMultipart()
-        mimemsg['From'] = from_address
-        mimemsg['To'] = mail_to.strip()
-
-        if var1.get() == 1:
-            mimemsg['Cc'] = mail_responsable.strip()
-
-        mimemsg['Subject'] = subject
-        mimemsg.attach(MIMEText(body, 'html'))
-
-        if attachment_file_path:
-            with open(attachment_file_path, "rb") as attachment:
-                part = MIMEApplication(attachment.read(), _subtype="pdf")
-                part.add_header('Content-Disposition', 'attachment', filename=os.path.basename(attachment_file_path))
-                mimemsg.attach(part)
-
-        try:
-            server.send_message(mimemsg)
-            print(f"Email envoyé à {mail_to}")
-            log_action(f"{formatted_datetime} Email envoyé à {mail_to} {materiel}")
-            read_file_log()
-
-            # Here we check if the current step is "Etape 4"
-            if etape.strip() == "Etape 4":
-                df.loc[(df['Matériel concerné'] == materiel) & (df['Mail'] == mail_to), 'Etape'] = "Terminé"
-            else:
-                next_etape_number = int(etape.split()[1]) + 1
-                df.loc[(df['Matériel concerné'] == materiel) & (df['Mail'] == mail_to), 'Etape'] = f"Etape {next_etape_number}"
-
-        except smtplib.SMTPRecipientsRefused as e:
-            print(f"Erreur d'envoi à {mail_to}: {e}")
-
-    server.quit()
-    df.to_excel(loaded_file_path, index=False)
-    messagebox.showinfo("Succès", "Emails envoyés avec succès et étapes mises à jour")
-    update_email_listbox()
-
-
-
-# Envoyer les emails dotation
-def send_emails_endowment():
-    global old_dst
-    selected_indices_endowment = email_listbox_endowment.curselection()
-    if not selected_indices_endowment:
-        messagebox.showerror("Erreur", "Aucun email sélectionné")
+    # Récupérer le preset de relance sélectionné
+    preset_relance = presets.get(preset_combobox.get())
+    if not preset_relance:
+        messagebox.showerror("Erreur", "Preset de mail introuvable.")
         return
 
-    selected_emails_endowment = [email_listbox_endowment.get(i) for i in selected_indices_endowment]
-
-    smtp_server = 'smtp.office365.com'
-    smtp_port = 587
-    username = username_entry.get()
-    password = password_entry.get()
-    from_address = from_address_entry.get()
-
-    server = smtplib.SMTP(smtp_server, smtp_port)
-    server.starttls()
-    server.login(username, password)
-
-    if var1_1.get() == 1:
-        preset_dotation = presets.get('dotation')
-    else:
-        preset_dotation = presets.get('rempla')
-
-    if not preset_dotation:
-        messagebox.showerror("Erreur", "Le preset 'Dotation' n'existe pas. Veuillez le créer avant de continuer.")
-        server.quit()
-        return
-
-    subject, body_template_path = preset_dotation[1], preset_dotation[2]
+    subject, body_template_path = preset_relance[1], preset_relance[2]
 
     try:
-        with open(body_template_path, 'r', encoding='windows-1252') as file:
+        # Lecture du modèle d'email
+        with open(body_template_path, 'r', encoding='utf-8') as file:
             body_template = file.read()
     except (UnicodeDecodeError, FileNotFoundError) as e:
         messagebox.showerror("Erreur", f"Erreur lors de la lecture du fichier de modèle d'email : {e}")
         server.quit()
         return
 
+    # Remplace les accolades pour éviter les erreurs dans le template
     body_template = escape_curly_braces(body_template)
 
-    for entry in selected_emails_endowment:
-        if var1_1.get() == 1:
-            demandeur, mail_to, beneficiare, ville, expe, dst = entry.split(" - ")
-        else:
-            demandeur, mail_to, beneficiare, ville, expe, dst, old_dst = entry.split(" - ")
+    for entry in selected_emails:
+        # Extraction des informations depuis le Treeview
+        materiel, mail_to, mail_responsable, etape = entry
 
-        behavior = "some_default_value"
+        # Vérification des données et initialisation des variables si nécessaires
+        if not mail_to or not isinstance(mail_to, str):
+            messagebox.showerror("Erreur", "Adresse email invalide.")
+            continue
 
         try:
-            if var1_1.get() == 1:
-                body = body_template.format(
-                    demandeur=demandeur,
-                    ville=ville,
-                    expe=expe,
-                    dst=dst,
-                    beneficiare=beneficiare,
-                    behavior=behavior
-                )
-            else:
-                body = body_template.format(
-                    demandeur=demandeur,
-                    ville=ville,
-                    expe=expe,
-                    dst=dst,
-                    beneficiare=beneficiare,
-                    old_dst=old_dst,
-                    behavior=behavior
-                )
+            # Personnalisation du modèle avec les données de l'utilisateur
+            body = body_template.format(
+                materiel=materiel,
+                etape=etape
+            )
+        except KeyError as e:
+            messagebox.showerror("Erreur", f"Variable non définie dans le modèle d'email : {e}")
+            continue  # Passer à l'entrée suivante
+
+        # Création du message MIME
+        mimemsg = MIMEMultipart()
+        mimemsg['From'] = from_address
+        mimemsg['To'] = mail_to.strip()
+        if var1.get() == 1:  # Si la case responsable en CC est cochée
+            mimemsg['Cc'] = mail_responsable.strip()
+        mimemsg['Subject'] = subject
+        mimemsg.attach(MIMEText(body, 'html', 'utf-8'))
+
+        # Ajout de la pièce jointe (si présente)
+        if attachment_file_path:
+            try:
+                with open(attachment_file_path, "rb") as attachment:
+                    part = MIMEApplication(attachment.read(), _subtype="pdf")
+                    part.add_header('Content-Disposition', 'attachment', filename=os.path.basename(attachment_file_path))
+                    mimemsg.attach(part)
+            except FileNotFoundError:
+                messagebox.showerror("Erreur", "Pièce jointe introuvable")
+                continue
+
+        # Ajout des images inline dans l'email
+        output_folder = os.path.dirname(body_template_path)
+        image_files = [f for f in os.listdir(output_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif'))]
+        for image_file in image_files:
+            with open(os.path.join(output_folder, image_file), 'rb') as img:
+                mime_image = MIMEImage(img.read())
+                mime_image.add_header('Content-ID', f'<{image_file}>')
+                mime_image.add_header('Content-Disposition', 'inline', filename=image_file)
+                mimemsg.attach(mime_image)
+
+        # Envoi de l'email
+        try:
+            server.send_message(mimemsg)
+            print(f"Email envoyé à {mail_to}")
+            log_action(f"{formatted_datetime} Email envoyé à {mail_to} pour {materiel}")
+            read_file_log()
+
+        except smtplib.SMTPRecipientsRefused as e:
+            print(f"Erreur d'envoi à {mail_to}: {e}")
+            messagebox.showinfo("Erreur", f"Erreur d'envoi à {mail_to}: {e}")
+
+    # Mise à jour du fichier Excel après envoi
+    load_excel_file(hp_file_path)
+    update_email_listbox('Maj')
+
+    # Fermeture de la connexion au serveur SMTP
+    server.quit()
+    messagebox.showinfo("Succès", "Emails envoyés avec succès")
+
+    
+
+# Envoyer les emails dotation/rempla
+def send_emails_endowment():
+    global old_dst
+    # Récupérer les indices sélectionnés dans le Treeview
+    selected_items = treeview.selection()
+    if not selected_items:
+        messagebox.showerror("Erreur", "Aucun email sélectionné")
+        return
+
+    selected_emails_endowment = [treeview.item(item, 'values') for item in selected_items]
+
+    server, from_address = config_smtp()
+
+    for entry in selected_emails_endowment:
+        demandeur, mail_to, beneficiare, ville, expe, dst, old_dst = entry[:7]
+        
+        # Nouvelle condition pour choisir le modèle en fonction de "Ref exp"
+        if expe.startswith("X"):
+            preset_dotation = presets.get('dota/rempla chrono')  # Si "Ref exp" commence par X, choisir dota/rempla
+        else:
+            preset_dotation = presets.get('dota/rempla dpd')  # Sinon, utiliser un autre modèle
+
+        subject, body_template_path = preset_dotation[1], preset_dotation[2]
+
+        try:
+            with open(body_template_path, 'r', encoding='utf-8') as file:
+                body_template = file.read()
+        except (UnicodeDecodeError, FileNotFoundError) as e:
+            messagebox.showerror("Erreur", f"Erreur lors de la lecture du fichier de modèle d'email : {e}")
+            server.quit()
+            return
+
+        body_template = escape_curly_braces(body_template)
+
+    for entry in selected_emails_endowment:
+        # Le Treeview renvoie une liste de valeurs correspondant aux colonnes
+        demandeur, mail_to, beneficiare, ville, expe, dst, old_dst = entry
+
+        if old_dst.strip().lower() == 'dotation':
+            old_dst = '/'
+
+        behavior = "some_default_value"  # Modifie ou ajuste cette valeur selon les besoins
+
+        try:
+            body = body_template.format(
+                demandeur=demandeur,
+                ville=ville,
+                expe=expe,
+                dst=dst,
+                old_dst=old_dst,
+                beneficiare=beneficiare,
+                behavior=behavior
+            )
         except KeyError as e:
             messagebox.showerror("Erreur", f"Variable non définie dans le modèle d'email : {e}")
             server.quit()
@@ -441,7 +458,7 @@ def send_emails_endowment():
             demandeur = mail_to
 
         if not demandeur.strip():
-            continue  # Skip sending email if demandeur is empty after fallback
+            continue
 
         mimemsg = MIMEMultipart()
         mimemsg['From'] = from_address
@@ -465,7 +482,6 @@ def send_emails_endowment():
                 mime_image.add_header('Content-Disposition', 'inline', filename=image_file)
                 mimemsg.attach(mime_image)
 
-
         try:
             server.send_message(mimemsg)
             print(f"Email envoyé à {mail_to}")
@@ -473,53 +489,113 @@ def send_emails_endowment():
             read_file_log()
 
         except smtplib.SMTPRecipientsRefused as e:
-            print(f"Erreur d'envoi à {mail_to}: {e}")
+            messagebox.showinfo("Erreur", f"Erreur d'envoi à {mail_to}: {e}")
 
     server.quit()
     messagebox.showinfo("Succès", "Emails envoyés avec succès")
 
 
-# Fichier Excel retro
-def load_excel_file():
-    global df, loaded_file_path
-    file_path = filedialog.askopenfilename()
+
+def check_columns(df):
+    # Nettoyer les noms de colonnes pour enlever les espaces inutiles
+    df.columns = df.columns.str.strip()
+
+    # Les noms de colonnes attendus
+    required_columns = ['Mail', 'Matériel concerné', 'Etat rétro', 'Etape Relance', 'Mail', 'Mail', 'Mail Responsable']  # Vérifiez l'exactitude des noms
+
+    # Vérifier si toutes les colonnes requises sont présentes
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    
+    if missing_columns:
+        messagebox.showerror("Erreur", f"Colonnes manquantes : {', '.join(missing_columns)}")
+        return False
+    return True
+
+
+
+# Fichier Excel relance
+def load_excel_file(file_path):
     if not file_path:
+        messagebox.showerror("Erreur", "Aucun fichier sélectionné.")
         return
-    df = pd.read_excel(file_path)
-    loaded_file_path = file_path
-    path_excel_label_retro.config(text=loaded_file_path.split("/")[-1])
-    update_email_listbox()
+    file_path_retro = file_path 
+    file_path_retro_cp = os.path.join(config_directory, 'tmp_dotation.xlsx')
+    shutil.copy2(file_path_retro, file_path_retro_cp)
+    path_excel_label_retro.config(text=file_path_retro.split("/")[-1])
+
+    global df  # La DataFrame principale pour Relance
+    try: 
+        #feuille "Rétro"
+        df = pd.read_excel(file_path_retro_cp, sheet_name='Rétro')
+        
+        if df.empty:
+            raise ValueError("Le fichier Excel est vide.")
+        
+        check_columns(df)
+        update_email_listbox('excel')
+        
+    except Exception as e:
+        messagebox.showerror("Erreur", f"Erreur lors du chargement du fichier Excel : {e}")
 
 
-def update_email_listbox():
+
+# Fonction Maj Treeview Relance
+def update_email_listbox(event):
     global df
-    if 'df' not in globals():
-        messagebox.showerror("Erreur", "Veuillez d'abord charger un fichier Excel.")
+    if 'df' not in globals() or df.empty:
+        messagebox.showerror("Erreur", "Veuillez d'abord charger un fichier Excel valide.")
         return
 
-    selected_preset = preset_combobox.get()
+    selected_preset = preset_combobox.get()  # Récupère le preset sélectionné
     if selected_preset:
-        etape = selected_preset.split()[1]
+        try:
+            # Vérification que selected_preset est dans le bon format
+            if len(selected_preset.split()) < 2:
+                messagebox.showerror("Erreur", "Le format du preset sélectionné est incorrect.")
+                return
 
-        selected_columns = df[['Matériel concerné', 'Mail', 'Etat rétro', 'Etape', 'Mail Responsable']]
-        filtered_columns = selected_columns[
-            (selected_columns['Etat rétro'] != 'Terminé') & (selected_columns['Etape'] == f"Etape {etape}")]
-        filtered_columns = filtered_columns.dropna(subset=['Matériel concerné', 'Mail', 'Etape'])
+            # Récupère l'étape (présumée être dans le format 'Etape X')
+            etape = selected_preset.split()[1]  # Exemple : "Etape 2"
+            
+            # Nettoie les valeurs dans la colonne 'Etape Relance'
+            df['Etape Relance'] = df['Etape Relance'].str.strip()
 
-        email_listbox.delete(0, tk.END)
-        for index, row in filtered_columns.iterrows():
-            email_listbox.insert(tk.END,
-                                 f"{row['Matériel concerné']} - {row['Mail']} - {row['Mail Responsable']} - {row['Etape']}")
+            # Vérifie si les colonnes nécessaires sont présentes dans le fichier Excel
+            if all(col in df.columns for col in ['Matériel concerné', 'Mail', 'Etat rétro', 'Etape Relance']):
+                
+                # Filtre les données en fonction de l'étape et des emails non terminés
+                filter_conditions = (
+                    (df['Etat rétro'] != 'Terminé') & 
+                    (df['Etape Relance'] == f"Etape {etape}")
+                )
+                
+                filtered_columns = df.loc[filter_conditions, ['Matériel concerné', 'Mail', 'Etat rétro', 'Etape Relance', 'Mail Responsable']]
+                
+                # Supprime les lignes avec des valeurs manquantes
+                filtered_columns.dropna(subset=['Matériel concerné', 'Mail', 'Etape Relance'], inplace=True)
+                
+                # Efface les anciennes données du Treeview
+                treeview_relance.delete(*treeview_relance.get_children())
+                
+                # Ajoute les nouvelles données filtrées dans le Treeview
+                for _, row in filtered_columns.iterrows():
+                    treeview_relance.insert("", "end", values=(
+                        row['Matériel concerné'],
+                        row['Mail'],
+                        row['Mail Responsable'],
+                        row['Etape Relance']
+                    ))
+            else:
+                messagebox.showerror("Erreur", "Les colonnes nécessaires ne sont pas présentes dans le fichier Excel.")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors de la mise à jour de la liste des emails : {e}")
+    else:
+        messagebox.showerror("Erreur", "Veuillez sélectionner un preset valide.")
 
-# Fichier Mail (HTML)
-def load_mail_file(mail_label, preset_name):
-    file_path_mail = filedialog.askopenfilename(filetypes=[("HTML files", "*.htm;*.html")])
-    if file_path_mail:
-        mail_label.config(text=file_path_mail)
-        presets[preset_name] = ("HTML", "", file_path_mail)
-        write_config()
+            
 
-# Fonction pour afficher un aperçu du contenu HTML
+
+# Afficher un aperçu du contenu HTML
 def show_html_preview():
     selected_preset = preset_listbox.get(tk.ACTIVE)
     if selected_preset:
@@ -534,52 +610,11 @@ def show_html_preview():
 # Fonction pour échapper les accolades dans le contenu HTML
 def escape_curly_braces(content):
     content = content.replace("{", "{{").replace("}", "}}")
-    content = content.replace("{{materiel}}", "{materiel}").replace("{{etape}}", "{etape}").replace("{{dst}}",
-                                                                                                    "{dst}").replace(
+    content = content.replace("{{materiel}}", "{materiel}").replace("{{etape}}", "{etape}").replace("{{dst}}","{dst}").replace(
         "{{beneficiare}}", "{beneficiare}").replace("{{ville}}", "{ville}").replace("{{expe}}", "{expe}").replace(
         "{{old_dst}}", "{old_dst}")
     return content
 
-# Fonction pour mettre à jour le contenu de l'email en fonction du preset sélectionné
-def update_body_text(event):
-    selected_preset = preset_combobox.get()
-    if selected_preset is not None and selected_preset in presets:
-        subject_entry.delete(0, tk.END)
-        subject_entry.insert(0, presets[selected_preset][1])
-
-        body_text.delete("1.0", tk.END)
-        content = presets[selected_preset][2]
-        if presets[selected_preset][0] == "HTML":
-            file_path = content
-            if not file_path:
-                messagebox.showerror("Erreur",
-                                     f"Le chemin pour {selected_preset} est vide. Veuillez charger un fichier HTML.")
-                return
-            content = None
-            for encoding in ['utf-8', 'latin-1', 'cp1252']:
-                try:
-                    with open(file_path, 'r', encoding=encoding) as file:
-                        content = file.read()
-                        break
-                except UnicodeDecodeError:
-                    continue
-                except FileNotFoundError:
-                    messagebox.showerror("Erreur", f"Le fichier {file_path} n'a pas été trouvé.")
-                    return
-            if content:
-                content = escape_curly_braces(content)
-                body_text.insert("1.0", content)
-            else:
-                messagebox.showerror("Erreur", "Impossible de lire le fichier avec les encodages disponibles")
-        else:
-            body_text.insert("1.0", content)
-
-        if selected_preset == "mail 3":
-            var1.set(1)
-        else:
-            var1.set(0)
-
-        update_email_listbox()
 
 # Fonction pour ajouter ou éditer un preset avec une fenêtre de texte
 def edit_preset_window(preset_name=None, is_html=False):
@@ -663,17 +698,7 @@ def edit_preset():
     if preset_name in presets:
         edit_preset_window(preset_name, is_html=presets[preset_name][0] == "HTML")
 
-# Fonction pour créer un widget pour charger un mail HTML
-def create_mail_widget(parent, text):
-    ttk.Label(parent, text=text).pack(pady=5, anchor=W)
-    button_frame = ttk.Frame(parent)
-    label = ttk.Label(parent, text="", wraplength=400)
-    mail_labels[text] = label
-    label.pack(pady=5, anchor=W)
-    ttk.Button(button_frame, text="Charger Mail (HTML)", command=lambda: load_mail_file(label, text),
-               style='success.TButton').pack(side=LEFT, pady=10)
-    button_frame.pack()
-
+# Piece Jointe PDF
 def load_attachment():
     global attachment_file_path
     file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
@@ -682,33 +707,46 @@ def load_attachment():
         attachment_label.config(text=os.path.basename(attachment_file_path))
         log_action(f"{formatted_datetime} Pièce jointe chargée : {file_path.split('/')[-1]}")
         read_file_log()
-        write_config()  # Enregistrer le chemin de la pièce jointe dans la configuration
+        write_config() 
 
-# Interface graphique
+
+# Charger fichier HP
+def load_dotation_hp():
+    global hp_file_path
+    file_path = filedialog.askopenfilename()
+    if file_path:
+        hp_file_path = file_path
+        hp_file_label.config(text=os.path.basename(hp_file_path))
+        log_action(f"{formatted_datetime} Fichier HP chargée : {file_path.split('/')[-1]}")
+        read_file_log()
+        write_config() 
+
+
+#Interface graphique
 root = tk.Tk()
 
-var1_1 = tk.IntVar()
-var1_2 = tk.IntVar()
+var_dpd = tk.IntVar()
+var_chrono = tk.IntVar()
 
 style = Style(theme='superhero')
 
 root.title("Mail Sender")
-root.geometry("800x900")
+root.geometry("1200x1200")
 root.resizable(False, False)
 
 # Lire la version
 version = read_version()
 
-# Créer le label pour afficher la version en bas à droite
+# label pour afficher la version
 version_label = ttk.Label(root, text=f"Version {version}", anchor='e')
 version_label.pack(side=tk.BOTTOM, anchor='e', padx=10, pady=10)
 
-root.iconbitmap('Mail_Sender\logo.ico')
+root.iconbitmap('Mail_Sender\\logo.ico')
 
 notebook = ttk.Notebook(root)
 notebook.pack(fill=BOTH, expand=True, padx=10, pady=10)
 
-# Onglet Informations de Connexion
+#### Onglet Informations de Connexion ####
 frame_connexion = ttk.Frame(notebook, padding=20)
 notebook.add(frame_connexion, text="Informations de Connexion")
 
@@ -726,96 +764,70 @@ from_address_entry.pack(pady=5)
 
 ttk.Button(frame_connexion, text="Enregistrer", command=write_config, style='success.TButton').pack(pady=10)
 
-# Onglet Relance
+#### Onglet Relance ####
 frame_email = ttk.Frame(notebook, padding=20)
 notebook.add(frame_email, text="Relance")
 
 button_frame = ttk.Frame(frame_email)
 button_frame.pack(pady=10)
 
-ttk.Button(button_frame, text="Charger fichier Excel", command=load_excel_file, style='success.TButton').pack(side=LEFT,
-                                                                                                              padx=10,
-                                                                                                              pady=10)
+ttk.Button(button_frame, text="Charger fichier Excel", command=reload_excel_file_relance_btn, style='success.TButton').pack(side=LEFT,padx=10,pady=10)
 
 path_excel_label_retro = ttk.Label(frame_email, text="Aucun fichier chargé")
 path_excel_label_retro.pack()
 
-# Filtrer les clés  pour mail 1, mail 2, mail 3, mail 4
-filtered_presets = [key for key in ["mail 1", "mail 2", "mail 3", "mail 4"] if key in presets]
-print("Presets filtrés:", filtered_presets)  # Vérifiez les résultats du filtrage
+# Filtrer les clés  pour mail 1, mail 2, mail 3
+filtered_presets = [key for key in ["mail 1", "mail 2", "mail 3"] if key in presets]
+
 
 #combobox pour l'onglet Relance
 ttk.Label(frame_email, text="Sélectionnez un preset de mail:").pack(pady=5, anchor=W)
 preset_combobox = ttk.Combobox(frame_email, values=filtered_presets, state="readonly")
 preset_combobox.pack(pady=5)
 
-# Liaison de la sélection du combobox à la fonction update_body_text
-preset_combobox.bind("<<ComboboxSelected>>", update_body_text)
-
-# Màj dynamiquement les valeurs après l'exécution de read_config()
-def update_combobox_values():
-    filtered_presets = [key for key in ["mail 1", "mail 2", "mail 3", "mail 4"] if key in presets]
-    preset_combobox['values'] = filtered_presets
-    print("Combobox updated with filtered presets:", filtered_presets)
-
-
 
 var1 = tk.IntVar()
 cc_responsable = ttk.Checkbutton(frame_email, text='Responsable en Cc', variable=var1, onvalue=1, offvalue=0)
 cc_responsable.pack()
 
-ttk.Label(frame_email, text="Sujet de l'email:").pack(pady=5, anchor=W)
-subject_entry = ttk.Entry(frame_email, width=50)
-subject_entry.pack(pady=5)
+style = ttk.Style()
+style.configure("Treeview.Heading", foreground="white", background="green", font=("Helvetica", 10, "bold"))
 
-ttk.Label(frame_email, text="Contenu de l'email:").pack(pady=5, anchor=W)
-body_text = tk.Text(frame_email, wrap=WORD, height=10, width=85)
-body_text.pack(pady=5)
 
-ttk.Label(frame_email, text="Sélectionnez les emails:").pack(pady=5, anchor=W)
-ttk.Label(frame_email, text=" DST |  Mail User  |  Mail Responsable  |  Etape").pack(padx=55, anchor=W)
-email_listbox = tk.Listbox(frame_email, selectmode=tk.MULTIPLE, height=10, width=85)
-email_listbox.pack(pady=5)
+treeview_relance = ttk.Treeview(frame_email, columns=("DST", "Mail User", "Mail Responsable", "Etape"), show="headings", selectmode="extended")
+treeview_relance.pack(fill="both", expand=True)
+
+# Configurer les en-têtes des colonnes avec alignement à gauche et style
+treeview_relance.heading("DST", text="DST", anchor="w")
+treeview_relance.heading("Mail User", text="Mail User", anchor="w")
+treeview_relance.heading("Mail Responsable", text="Mail Responsable", anchor="w")
+treeview_relance.heading("Etape", text="Etape", anchor="w")
+
+# Configurer la largeur des colonnes
+treeview_relance.column("DST", width=170, anchor="w")
+treeview_relance.column("Mail User", width=170, anchor="w")
+treeview_relance.column("Mail Responsable", width=150, anchor="w")
+treeview_relance.column("Etape", width=100, anchor="w")
+
+# Liaison de la sélection du combobox
+preset_combobox.bind("<<ComboboxSelected>>", update_email_listbox)
+
+
+# Màj dynamiquement les valeurs après l'exécution de read_config()
+def update_combobox_values():
+    filtered_presets = [key for key in ["mail 1", "mail 2", "mail 3"] if key in presets]
+    preset_combobox['values'] = filtered_presets
+
+
 
 button_frame_email = ttk.Frame(frame_email)
 button_frame_email.pack(pady=10)
 
-ttk.Button(button_frame_email, text="Envoyer les emails", command=send_emails, style='primary.TButton').pack(side=LEFT,
-                                                                                                             padx=10)
+ttk.Button(button_frame_email, text="Envoyer les emails", command=send_emails, style='primary.TButton').pack(side=LEFT, padx=10)
 
-
-# Onglet dotation/rempla
-
-def on_dotation_change():
-    # Si Dotation est cochée, désactiver Remplacement
-    if var1_1.get() == 1:
-        var1_2.set(0)  # Décocher Remplacement
-        preset_combobox_endowment.set("dotation")
-        read_excel_file_endowment(dota_file)
-    else:
-        var1_2.set(1)
-        preset_combobox_endowment.set("rempla")
-
-
-def on_rempla_change():
-    # Si Remplacement est cochée, désactiver Dotation
-    if var1_2.get() == 1:
-        var1_1.set(0)  # Décocher Dotation
-        preset_combobox_endowment.set("rempla")
-        read_excel_file_endowment(dota_file)
-    else:
-        var1_1.set(1)
-        preset_combobox_endowment.set("dotation")
-
-
+##### Onglet Dotation/Rempla #####
 frame_endowment = ttk.Frame(notebook, padding=20)
 notebook.add(frame_endowment, text="Dotation/Rempla")
-
-check_dota = ttk.Checkbutton(frame_endowment, text='Dotation', variable=var1_1, command=on_dotation_change, onvalue=1, offvalue=0)
-check_dota.pack(anchor=W, pady=10)
-
-check_rempla = ttk.Checkbutton(frame_endowment, text='Remplacement', variable=var1_2, command=on_rempla_change,onvalue=1, offvalue=0)
-check_rempla.pack(anchor=W)
 
 button_frame_endowment = ttk.Frame(frame_endowment)
 button_frame_endowment.pack(pady=10)
@@ -825,20 +837,36 @@ path_excel_label.pack()
 
 ttk.Button(button_frame_endowment, text="Charger fichier Excel", command=import_excel_file_endowment,style='success.TButton').pack(side=LEFT, padx=10, pady=5)
 
-# img bouton reload
+#img bouton reload
 img_reload = tk.PhotoImage(file=r"Mail_Sender\src\img\reload.png")
 photoimage = img_reload.subsample(20, 20) # modifier la taille
 ttk.Button(button_frame_endowment, image=photoimage, command=reload_excel_file_btn, style="success.Outline.TButton").pack()
 
 
-ttk.Label(frame_endowment, text="Sélectionnez un preset de mail:").pack(pady=15, anchor=W)
-preset_combobox_endowment = ttk.Combobox(frame_endowment, values=list(presets.keys()), state="readonly")
-preset_combobox_endowment.pack(pady=5)
-preset_combobox_endowment.config(state="disabled")
+style = ttk.Style()
+style.configure("Treeview.Heading", foreground="white", background="green", font=("Helvetica", 10, "bold"))
 
-ttk.Label(frame_endowment, text="Sélectionnez les emails:").pack(pady=5, anchor=W)
-email_listbox_endowment = tk.Listbox(frame_endowment, selectmode=tk.MULTIPLE, height=20, width=150)
-email_listbox_endowment.pack(pady=5)
+
+treeview = ttk.Treeview(frame_endowment, columns=("demandeur", "mail", "nom_prenom", "ville", "ref_exp", "dst", "ancien_dst"), show="headings", selectmode="extended")
+treeview.pack(fill="both", expand=True)
+
+# Configurer les en-têtes des colonnes avec alignement à gauche et style
+treeview.heading("demandeur", text="Demandeur", anchor="w")
+treeview.heading("mail", text="Mail", anchor="w")
+treeview.heading("nom_prenom", text="Nom, Prénom", anchor="w")
+treeview.heading("ville", text="Ville", anchor="w")
+treeview.heading("ref_exp", text="Réf exp", anchor="w")
+treeview.heading("dst", text="DST", anchor="w")
+treeview.heading("ancien_dst", text="Ancien DST", anchor="w")
+
+# Configurer la largeur des colonnes
+treeview.column("demandeur", width=170, anchor="w")
+treeview.column("mail", width=170, anchor="w")
+treeview.column("nom_prenom", width=150, anchor="w")
+treeview.column("ville", width=100, anchor="w")
+treeview.column("ref_exp", width=120, anchor="w")
+treeview.column("dst", width=100, anchor="w")
+treeview.column("ancien_dst", width=50, anchor="w")
 
 boutton_frame_type = ttk.Frame(frame_endowment)
 boutton_frame_type.pack(pady=10)
@@ -847,17 +875,8 @@ button_frame_email_1 = ttk.Frame(frame_endowment)
 button_frame_email_1.pack(pady=10)
 
 
-ttk.Button(boutton_frame_type, text="DPD", command=send_emails_endowment,style='primary.TButton').pack(side=LEFT, padx=10)
-ttk.Button(boutton_frame_type, text="Chrono", command=copy_selected_email, style='primary.TButton').pack(side=LEFT, padx=10)
-
-
 ttk.Button(button_frame_email_1, text="Envoyer les emails", command=send_emails_endowment,style='primary.TButton').pack(side=LEFT, padx=10)
-ttk.Button(button_frame_email_1, text="Copier l'email sélectionné", command=copy_selected_email, style='primary.TButton').pack(side=LEFT, padx=10)
-
-
-
-
-
+ttk.Button(button_frame_email_1, text="Copier message", command=copy_selected_email, style='primary.TButton').pack(side=LEFT, padx=10)
 
 
 
@@ -873,34 +892,30 @@ preset_listbox.pack(pady=5, fill=tk.X)
 preset_button_frame = ttk.Frame(frame_msg)
 preset_button_frame.pack(pady=10)
 
-ttk.Button(preset_button_frame, text="+ (Texte)", command=lambda: add_preset(is_html=False),
-           style='success.TButton').pack(side=LEFT, padx=5)
-ttk.Button(preset_button_frame, text="+ (HTML)", command=lambda: add_preset(is_html=True),
-           style='success.TButton').pack(side=LEFT, padx=5)
+ttk.Button(preset_button_frame, text="+ (Texte)", command=lambda: add_preset(is_html=False),style='success.TButton').pack(side=LEFT, padx=5)
+ttk.Button(preset_button_frame, text="+ (HTML)", command=lambda: add_preset(is_html=True),style='success.TButton').pack(side=LEFT, padx=5)
 ttk.Button(preset_button_frame, text="-", command=delete_preset, style='danger.TButton').pack(side=LEFT, padx=5)
 ttk.Button(preset_button_frame, text="Modifier", command=edit_preset, style='warning.TButton').pack(side=LEFT, padx=5)
-ttk.Button(preset_button_frame, text="Aperçu HTML", command=show_html_preview, style='info.TButton').pack(side=LEFT,
-                                                                                                          padx=5)
+ttk.Button(preset_button_frame, text="Aperçu HTML", command=show_html_preview, style='info.TButton').pack(side=LEFT,padx=5)
 
 ttk.Button(frame_msg, text="Charger Pièce Jointe (PDF)", command=load_attachment, style='success.TButton').pack(pady=10)
 attachment_label = ttk.Label(frame_msg, text="Aucune pièce jointe chargée")
 attachment_label.pack(pady=5)
 
-# Onglet action récentes
+ttk.Button(frame_msg, text="Charger fichier HP", command=load_dotation_hp, style='success.TButton').pack(pady=10)
+hp_file_label = ttk.Label(frame_msg, text="Aucune pièce jointe chargée")
+hp_file_label.pack(pady=5)
+
+#Onglet action récentes
 frame_action = ttk.Frame(notebook, padding=20)
 notebook.add(frame_action, text="Actions Recentes")
 
 button_frame_log = ttk.Frame(frame_action)
 button_frame_log.pack(pady=10)
 
+
 #btn delete log
 ttk.Button(button_frame_log, text="Vider logs", command=delete_log_file, style="sucess.TButton").pack()
-
-#Onglet msg to html
-frame_msg2html = ttk.Frame(notebook, padding=20)
-notebook.add(frame_msg2html, text="MSG to HTML")
-
-ttk.Button(frame_msg2html, text="Charger fichier MSG", command=select_msg_file, style='success.TButton').pack(pady=5)
 
 
 def read_file_log():
@@ -911,6 +926,7 @@ def read_file_log():
             content = file.read()
             read_log.delete("1.0", tk.END)
             read_log.insert("1.0", content)
+
 
 
 read_log = tk.Text(frame_action, height=50, width=70)

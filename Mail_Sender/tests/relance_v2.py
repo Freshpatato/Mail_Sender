@@ -713,8 +713,7 @@ email_listbox.pack(pady=5)
 button_frame_email = ttk.Frame(frame_email)
 button_frame_email.pack(pady=10)
 
-ttk.Button(button_frame_email, text="Envoyer les emails", command=send_emails, style='primary.TButton').pack(side=LEFT,
-                                                                                                             padx=10)
+ttk.Button(button_frame_email, text="Envoyer les emails", command=send_emails, style='primary.TButton').pack(side=LEFT, padx=10)
 
 
 # Onglet dotation/rempla
