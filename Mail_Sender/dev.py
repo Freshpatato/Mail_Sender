@@ -25,9 +25,9 @@ global df
 current_datetime = datetime.now()
 formatted_datetime = current_datetime.strftime("%d/%m/%Y %H:%M:%S")
 
-loaded_file_path = None  # Variable pour stocker le chemin du fichier chargé
-attachment_file_path = None  # Variable pour stocker le chemin de la pièce jointe
-hp_file_path = None #Variable chemin fichier HP
+loaded_file_path = None  
+attachment_file_path = None  # Variable  pièce jointe
+hp_file_path = None #Variable  fichier HP
 
 
 # --- Gestion configuaration ---
@@ -54,7 +54,7 @@ def read_config():
                 preset_listbox.insert(tk.END, f"{key} ({preset_type})")
             except ValueError:
                 print(f"Erreur de format pour le preset {key}")
-
+    
     if 'Attachment' in config:
         global attachment_file_path
         attachment_file_path = config['Attachment'].get('pdf', '')
@@ -130,7 +130,7 @@ def delete_log_file():
 
 def read_version():
     # Chemin du répertoire de configuration où se trouve config.ini et version.txt
-    config_directory = os.path.join(os.path.expanduser("~"), ".retro_app")
+    config_directory = "Mail_Sender\\version.txt"
     version_file_path = os.path.join(config_directory, "version.txt")  
 
     try:
@@ -183,36 +183,72 @@ def read_excel_file_endowment(file_path):
     global filtered_df  
     if not file_path:
         return
-    df = pd.read_excel(file_path, sheet_name='Agence')
-    df.columns = df.iloc[0]
-    df = df[1:]
-    selected_columns = df[[ 
+    
+    # Lire les deux feuilles 'Agence' et 'PMAD.DSIFRANCE'
+    df_agence = pd.read_excel(file_path, sheet_name='Agence')
+    df_pmad = pd.read_excel(file_path, sheet_name='PMAD.DSIFRANCE')
+    
+    # Ajuster les colonnes, même méthode pour les deux feuilles
+    df_agence.columns = df_agence.iloc[0]
+    df_agence = df_agence[1:]
+    
+    df_pmad.columns = df_pmad.iloc[0]
+    df_pmad = df_pmad[1:]
+
+    # Sélectionner les colonnes requises pour chaque DataFrame
+    selected_columns_agence = df_agence[[ 
         'Demandeur', 'NOM,Prénom', 'Mail', 'Ancien DST', 'Ville', 'DST', 'Ref exp', 'Service expe étranger', 'Rempla/ Dotation', 'Logiciels']]
     
+    selected_columns_pmad = df_pmad[[ 
+        'Demandeur', 'NOM,Prénom', 'Mail', 'Ancien DST', 'Ville', 'DST', 'Ref exp', 'Service expe étranger', 'Rempla/ Dotation', 'Logiciels']]
+
     # Effacer les anciennes données du Treeview
     for row in treeview.get_children():
         treeview.delete(row)
     
-  
-    filtered_df = selected_columns[(
-        selected_columns['Rempla/ Dotation'].str.contains('Rempla EZV|Dotation EZV', case=False, na=False)) & (
-        selected_columns['Logiciels'].str.contains('Mail', case=False, na=False)) ]
-   
+    # Combiner les deux DataFrames en un seul
+    combined_df = pd.concat([selected_columns_agence, selected_columns_pmad], ignore_index=True)
+
+    # Filtrer les données
+    filtered_df = combined_df[(
+        combined_df['Rempla/ Dotation'].str.contains('Rempla EZV|Dotation EZV', case=False, na=False)) & (
+        combined_df['Logiciels'].str.contains('Mail', case=False, na=False)) ]
+
+    # Configurer les styles pour le Treeview
+    style = ttk.Style()
+    
+    # Définir un style pour les lignes normales
+    style.configure("Treeview.Row", background="#F0F0F0")  # Gris clair
+    # Définir un style pour les lignes issues de PMAD.DSIFRANCE
+    style.configure("Treeview.Blue.Row", background="#87CEFA")  # Bleu clair foncé
+
     # Insérer les données dans le Treeview
     for index, row in filtered_df.iterrows():
-        treeview.insert("", "end", values=(
-            row['Demandeur'], 
-            row['Mail'], 
-            row['NOM,Prénom'], 
-            row['Ville'], 
-            row['Ref exp'], 
-            row['DST'], 
-            row['Ancien DST']
-        ))
+        # Si la ligne provient de la feuille PMAD.DSIFRANCE, appliquer le tag 'yellow'
+        if index >= len(selected_columns_agence):
+            treeview.insert("", "end", values=(
+                row['Demandeur'], 
+                row['Mail'], 
+                row['NOM,Prénom'], 
+                row['Ville'], 
+                row['Ref exp'], 
+                row['DST'], 
+                row['Ancien DST']
+            ), tags=('yellow',))  # Appliquer le tag 'yellow'
+        else:
+            treeview.insert("", "end", values=(
+                row['Demandeur'], 
+                row['Mail'], 
+                row['NOM,Prénom'], 
+                row['Ville'], 
+                row['Ref exp'], 
+                row['DST'], 
+                row['Ancien DST']
+            ))
 
 
 
-# --- Message cloture Doation/Remplacement
+# --- Message cloture Doation/Remplacement ---
 def copy_selected_email():
     selected_items = treeview.selection()  # Récupérer les éléments sélectionnés dans le Treeview
     if not selected_items:
@@ -237,7 +273,7 @@ def copy_selected_email():
                 Postes de Travail France
                 """
             else:
-                if var_dpd.get() == 0:  # Prepa Venissieux
+                if old_dst.strip().startswith('F') and expe.strip().startswith('X'):  # Prepa Venissieux
                     text = f"""
                     Bonjour,
                     
@@ -249,7 +285,7 @@ def copy_selected_email():
                     Cordialement,
                     Postes de Travail France
                     """
-                else:  # Préparation à distance
+                elif old_dst.strip().startswith('F') and expe.strip().startswith('1'):  # Préparation à distance
                     text = f"""
                     Bonjour,
                     
@@ -258,7 +294,7 @@ def copy_selected_email():
                     Concernant la restitution de votre ancien PC {old_dst}, il vous suffit de prendre rendez-vous via notre outil RESERVIO.
                     Pour accéder à l’outil de réservation, merci de prendre connaissance du mail « AVIS EXPEDITION ».
 
-                    Concernant l'installation de vos logiciels, merci de nous contacter au : 02 99 04 92 28.
+                    Concernant l'installation de vos logiciels, merci de nous contacter à l'adresse mail suivante: pmad.dsifrance@spie.com
                     Merci de revenir vers nous dans les 7 jours suivant la réception du PC, si ce délai est dépassé merci de faire un ticket EasyVista.
                     
                     Cordialement,
@@ -301,6 +337,7 @@ def load_excel_file(file_path):
     file_path_retro_cp = os.path.join(config_directory, 'tmp_dotation.xlsx')
     shutil.copy2(file_path_retro, file_path_retro_cp)
     path_excel_label_retro.config(text=file_path_retro.split("/")[-1])
+    global df
     try: 
         
         df = pd.read_excel(file_path_retro_cp, sheet_name='Rétro')
@@ -309,7 +346,7 @@ def load_excel_file(file_path):
             raise ValueError("Le fichier Excel est vide.")
         
         check_columns(df)
-        update_email_listbox('excel')
+
         
     except Exception as e:
         messagebox.showerror("Erreur", f"Erreur lors du chargement du fichier Excel : {e}")
@@ -319,11 +356,17 @@ def load_excel_file(file_path):
 # Fonction Maj Treeview Relance
 def update_email_listbox(event):
     global df
-    if 'df' not in globals() or df.empty:
-        messagebox.showerror("Erreur", "Veuillez d'abord charger un fichier Excel valide.")
+    # Vérifier si le fichier Excel est chargé avant de continuer
+    if df.empty:
+        messagebox.showerror("Erreur", "Veuillez charger un fichier Excel avant de sélectionner un preset.")
         return
 
     selected_preset = preset_combobox.get() 
+    if selected_preset == "mail 3": 
+        var1.set(1)  
+    else:
+        var1.set(0)  
+
     if selected_preset:
         try:
             if len(selected_preset.split()) < 2:
@@ -332,7 +375,6 @@ def update_email_listbox(event):
 
             # Récupère l'étape 
             etape = selected_preset.split()[1]  
-            
             
             df['Etape Relance'] = df['Etape Relance'].str.strip()
 
@@ -368,10 +410,9 @@ def update_email_listbox(event):
     else:
         messagebox.showerror("Erreur", "Veuillez sélectionner un preset valide.")
 
+
 def reload_excel_file_relance_btn():
     load_excel_file(hp_file_path)
-
-
 
 
 
@@ -441,7 +482,10 @@ def send_emails():
         mimemsg['From'] = from_address
         mimemsg['To'] = mail_to.strip()
         if var1.get() == 1:  # Si la case responsable en CC est cochée
-            mimemsg['Cc'] = mail_responsable.strip()
+            if mail_responsable.strip() == 'nan':
+                messagebox.showerror("Erreur", "Mail responsable invalide")
+            else:
+                mimemsg['Cc'] = mail_responsable.strip()         
         mimemsg['Subject'] = subject
         mimemsg.attach(MIMEText(body, 'html', 'utf-8'))
 
@@ -523,13 +567,12 @@ def send_emails_endowment():
         body_template = escape_curly_braces(body_template)
 
     for entry in selected_emails_endowment:
-        # Le Treeview renvoie une liste de valeurs correspondant aux colonnes
         demandeur, mail_to, beneficiare, ville, expe, dst, old_dst = entry
 
         if old_dst.strip().lower() == 'dotation':
             old_dst = '/'
 
-        behavior = "some_default_value"  # Modifie ou ajuste cette valeur selon les besoins
+        behavior = "some_default_value"  
 
         try:
             body = body_template.format(
@@ -721,13 +764,10 @@ def load_dotation_hp():
 # --- Gestion interface graphique ---
 root = tk.Tk()
 
-var_dpd = tk.IntVar()
-var_chrono = tk.IntVar()
-
 style = Style(theme='superhero')
 
 root.title("Mail Sender")
-root.geometry("1200x1200")
+root.geometry("1200x900")
 root.resizable(False, False)
 
 # Lire la version
@@ -737,7 +777,7 @@ version = read_version()
 version_label = ttk.Label(root, text=f"Version {version}", anchor='e')
 version_label.pack(side=tk.BOTTOM, anchor='e', padx=10, pady=10)
 
-root.iconbitmap('Mail_Sender\\logo.ico')
+#root.iconbitmap('Mail_Sender\\logo.ico')
 
 notebook = ttk.Notebook(root)
 notebook.pack(fill=BOTH, expand=True, padx=10, pady=10)
@@ -761,6 +801,7 @@ from_address_entry.pack(pady=5)
 ttk.Button(frame_connexion, text="Enregistrer", command=write_config, style='success.TButton').pack(pady=10)
 
 #### Onglet Relance ####
+var1 = tk.IntVar()
 frame_email = ttk.Frame(notebook, padding=20)
 notebook.add(frame_email, text="Relance")
 
@@ -781,10 +822,9 @@ ttk.Label(frame_email, text="Sélectionnez un preset de mail:").pack(pady=5, anc
 preset_combobox = ttk.Combobox(frame_email, values=filtered_presets, state="readonly")
 preset_combobox.pack(pady=5)
 
-
-var1 = tk.IntVar()
 cc_responsable = ttk.Checkbutton(frame_email, text='Responsable en Cc', variable=var1, onvalue=1, offvalue=0)
 cc_responsable.pack()
+
 
 style = ttk.Style()
 style.configure("Treeview.Heading", foreground="white", background="green", font=("Helvetica", 10, "bold"))
@@ -831,12 +871,7 @@ button_frame_endowment.pack(pady=10)
 path_excel_label = ttk.Label(frame_endowment, text="Aucun fichier chargé")
 path_excel_label.pack()
 
-ttk.Button(button_frame_endowment, text="Charger fichier Excel", command=import_excel_file_endowment,style='success.TButton').pack(side=LEFT, padx=10, pady=5)
-
-#img bouton reload
-img_reload = tk.PhotoImage(file=r"Mail_Sender\src\img\reload.png")
-photoimage = img_reload.subsample(20, 20) # modifier la taille
-ttk.Button(button_frame_endowment, image=photoimage, command=reload_excel_file_btn, style="success.Outline.TButton").pack()
+ttk.Button(button_frame_endowment, text="Charger fichier Excel", command=reload_excel_file_btn,style='success.TButton').pack(side=LEFT, padx=10, pady=5)
 
 
 style = ttk.Style()
@@ -903,10 +938,10 @@ hp_file_label = ttk.Label(frame_msg, text="Aucune pièce jointe chargée")
 hp_file_label.pack(pady=5)
 
 #Onglet action récentes
-frame_action = ttk.Frame(notebook, padding=20)
-notebook.add(frame_action, text="Actions Recentes")
+frame_action = ttk.Frame(notebook, padding=20, width=600)  # Adjust the width here
+notebook.add(frame_action, text="Actions Récentes")
 
-button_frame_log = ttk.Frame(frame_action)
+button_frame_log = ttk.Frame(frame_action, width=600)  # Adjust the width here as well
 button_frame_log.pack(pady=10)
 
 

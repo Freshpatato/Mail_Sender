@@ -1,6 +1,12 @@
 # Mail_Sender
 
-A ajouté :
 
-Numero de ticket
-Maj des msg dotation/rempla
+## Objectif
+
+Semi-automatiser l'envoye de mail avec un outils python graphique pour la PMAD de SPIE (Retro et Dotation/Remplacment)
+
+
+## Fonctionnement
+
+
+

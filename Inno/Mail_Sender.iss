@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Mail Sender"
-#define MyAppVersion "1.0"
+#define MyAppVersion "2"
 #define MyAppPublisher "SPIE, Inc."
 #define MyAppExeName "Mail_Sender.exe"
 
@@ -27,7 +27,7 @@ DisableProgramGroupPage=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
 OutputDir=C:\Users\maxime.bourquard\OneDrive - SPIE\Documents\GitHub\Mail_Sender\Inno
-OutputBaseFilename=Mail_Sender_1.1
+OutputBaseFilename=Mail_Sender_V2
 SetupIconFile=C:\Users\maxime.bourquard\OneDrive - SPIE\Documents\GitHub\Mail_Sender\Mail_Sender\logo.ico
 Compression=lzma
 SolidCompression=yes
@@ -40,9 +40,9 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "C:\Users\maxime.bourquard\output\dev\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "C:\Users\maxime.bourquard\output\dev\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "C:\Users\maxime.bourquard\output\dev\Mail_Sender\*"; DestDir: "{app}\Mail_Sender"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\Users\maxime.bourquard\output\Mail_Sender_V2\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\maxime.bourquard\output\Mail_Sender_V2\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\Users\maxime.bourquard\output\Mail_Sender_V2\Mail_Sender\*"; DestDir: "{app}\Mail_Sender"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
