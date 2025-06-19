@@ -1,12 +1,16 @@
-# Mail_Sender
+# 📧 Mail Sender 
 
+Service Python dédié à l’envoi d’e-mails via un mdp application de O365
 
-## Objectif
+## 📌 Objectifs
 
-Semi-automatiser l'envoye de mail avec un outils python graphique pour la PMAD de SPIE (Retro et Dotation/Remplacment)
+- Automatiser les mails d'expédition de commande
+- Gérer l'envoi via office 365
+- Automatisation via excel
 
+## 🛠️ Technologies
 
-## Fonctionnement
-
+- Python 3.x
+- Fichier txt en local
 
 
